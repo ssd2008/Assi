@@ -94,8 +94,8 @@ class VideoService:
         if not request.history:
             return request.message
         if self._client is None:
-            user_context = [item.content for item in request.history if item.role == "user"][-2:]
-            return " Контекст предыдущих вопросов: ".join([*user_context, request.message])[-5000:]
+            recent = "\n".join(f"{item.role}: {item.content}" for item in request.history[-4:])
+            return f"Контекст диалога:\n{recent}\n\nПоследний вопрос: {request.message}"[-5000:]
         history = "\n".join(f"{item.role}: {item.content}" for item in request.history[-8:])
         response = await self._client.chat.completions.create(
             model=self._settings.openai_model,
