@@ -8,11 +8,18 @@ import httpx
 
 async def main(base_url: str) -> None:
     document_id: str | None = None
+    folder_id: str | None = None
     async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
         try:
             health = await client.get("/health")
             health.raise_for_status()
             print("health:", health.json())
+
+            folder_response = await client.post("/folders", json={"name": "Smoke test"})
+            folder_response.raise_for_status()
+            folder = folder_response.json()
+            folder_id = folder["id"]
+            print("folder:", folder)
 
             created = await client.post(
                 "/documents",
@@ -24,7 +31,7 @@ async def main(base_url: str) -> None:
                         "Для лечения применяют ингибиторы АПФ, БРА, диуретики, блокаторы "
                         "кальциевых каналов и бета-блокаторы."
                     ),
-                    "specialty": "cardiology",
+                    "folder_id": folder_id,
                     "language": "ru",
                 },
             )
@@ -58,6 +65,7 @@ async def main(base_url: str) -> None:
                     "top_k": 5,
                     "candidate_k": 10,
                     "max_context_chunks": 3,
+                    "filters": {"folder_ids": [folder_id]},
                 },
             )
             answer.raise_for_status()
@@ -70,6 +78,10 @@ async def main(base_url: str) -> None:
                 deleted = await client.delete(f"/documents/{document_id}")
                 deleted.raise_for_status()
                 print("cleanup: deleted", document_id)
+            if folder_id is not None:
+                deleted_folder = await client.delete(f"/folders/{folder_id}")
+                deleted_folder.raise_for_status()
+                print("cleanup: deleted folder", folder_id)
 
 
 if __name__ == "__main__":
