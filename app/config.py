@@ -11,8 +11,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    """Application configuration loaded from environment variables and `.env`."""
-
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
@@ -21,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Medical Learning Assistant"
-    app_version: str = "0.3.0"
+    app_version: str = "0.4.0"
     app_env: Literal["local", "test", "production"] = "local"
     debug: bool = False
     api_prefix: str = "/api/v1"
@@ -30,16 +28,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
-    database_url: SecretStr = SecretStr(
-        "postgresql://med_user:med%5Fpass@localhost:5432/med_assistant"
-    )
+    database_url: SecretStr = SecretStr("postgresql://med_user:med%5Fpass@localhost:5432/med_assistant")
     database_pool_min_size: int = Field(default=1, ge=1, le=50)
     database_pool_max_size: int = Field(default=10, ge=1, le=100)
     database_command_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None
-    qdrant_collection_name: str = "document_chunks_v1"
+    qdrant_collection_name: str = "document_chunks_v2"
     qdrant_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     qdrant_upsert_batch_size: int = Field(default=64, ge=1, le=1000)
 
@@ -58,7 +54,9 @@ class Settings(BaseSettings):
 
     answer_backend: Literal["extractive", "openai"] = "extractive"
     openai_api_key: SecretStr | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4.1-mini"
+    openai_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
 
     asr_backend: Literal["disabled", "faster-whisper"] = "faster-whisper"
     asr_model_name: str = "small"
@@ -72,6 +70,9 @@ class Settings(BaseSettings):
     video_chunk_duration_seconds: float = Field(default=20.0, ge=3.0, le=120.0)
     video_chunk_overlap_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
     video_context_neighbor_chunks: int = Field(default=1, ge=0, le=5)
+    video_chapter_min_seconds: float = Field(default=120.0, ge=30.0, le=1800.0)
+    video_chapter_max_seconds: float = Field(default=600.0, ge=60.0, le=3600.0)
+    video_chapter_shift_threshold: float = Field(default=0.20, ge=0.01, le=1.0)
     retrieval_top_k: int = Field(default=10, ge=1, le=100)
     retrieval_candidate_k: int = Field(default=30, ge=1, le=300)
     minimum_retrieval_score: float | None = Field(default=None, ge=-1.0, le=1.0)
@@ -81,19 +82,19 @@ class Settings(BaseSettings):
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     url_fetch_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     url_fetch_max_redirects: int = Field(default=5, ge=0, le=20)
-    url_user_agent: str = "MedicalLearningAssistant/0.3"
+    url_user_agent: str = "MedicalLearningAssistant/0.4"
 
     @field_validator("log_level", mode="before")
     @classmethod
     def normalize_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
 
-    @field_validator("qdrant_url")
+    @field_validator("qdrant_url", "openai_base_url")
     @classmethod
-    def normalize_qdrant_url(cls, value: str) -> str:
+    def normalize_http_url(cls, value: str) -> str:
         value = value.rstrip("/")
         if not value.startswith(("http://", "https://")):
-            raise ValueError("qdrant_url must start with http:// or https://")
+            raise ValueError("URL must start with http:// or https://")
         return value
 
     @field_validator("api_prefix")
@@ -109,9 +110,9 @@ class Settings(BaseSettings):
         if self.chunk_overlap_tokens >= self.chunk_size_tokens:
             raise ValueError("chunk_overlap_tokens must be smaller than chunk_size_tokens")
         if self.video_chunk_overlap_seconds >= self.video_chunk_duration_seconds:
-            raise ValueError(
-                "video_chunk_overlap_seconds must be smaller than video_chunk_duration_seconds"
-            )
+            raise ValueError("video_chunk_overlap_seconds must be smaller than video_chunk_duration_seconds")
+        if self.video_chapter_min_seconds >= self.video_chapter_max_seconds:
+            raise ValueError("video_chapter_min_seconds must be smaller than video_chapter_max_seconds")
         if self.retrieval_candidate_k < self.retrieval_top_k:
             raise ValueError("retrieval_candidate_k cannot be smaller than top_k")
         if self.answer_backend == "openai" and self.openai_api_key is None:
@@ -129,6 +130,10 @@ class Settings(BaseSettings):
     @property
     def max_video_size_bytes(self) -> int:
         return self.max_video_size_mb * 1024 * 1024
+
+    @property
+    def generative_features_enabled(self) -> bool:
+        return self.answer_backend == "openai" and self.openai_api_key is not None
 
     def get_database_url(self) -> str:
         return self.database_url.get_secret_value()
