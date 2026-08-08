@@ -10,14 +10,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.schemas import SourceType
 
 DENSE_VECTOR_NAME = "dense"
-PAYLOAD_SCHEMA_VERSION = 2
+PAYLOAD_SCHEMA_VERSION = 3
 
 
 class ChunkPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[2] = PAYLOAD_SCHEMA_VERSION
+    schema_version: Literal[3] = PAYLOAD_SCHEMA_VERSION
     document_id: UUID
+    folder_id: UUID
+    folder_name: str = Field(min_length=1, max_length=120)
     chunk_index: int = Field(ge=0)
     text: str = Field(min_length=1)
     token_count: int = Field(gt=0)
@@ -31,7 +33,6 @@ class ChunkPayload(BaseModel):
     document_title: str = Field(min_length=1, max_length=1000)
     source_type: SourceType
     source_url: str | None = Field(default=None, max_length=4000)
-    specialty: str | None = Field(default=None, max_length=100)
     lecture_date: date | None = None
     lecture_date_ordinal: int | None = Field(default=None, ge=1)
     language: str = Field(min_length=2, max_length=16)
@@ -43,19 +44,11 @@ class ChunkPayload(BaseModel):
             raise ValueError("char_end must be greater than char_start")
         if (self.page_start is None) != (self.page_end is None):
             raise ValueError("page_start and page_end must be set together")
-        if (
-            self.page_start is not None
-            and self.page_end is not None
-            and self.page_end < self.page_start
-        ):
+        if self.page_start is not None and self.page_end is not None and self.page_end < self.page_start:
             raise ValueError("page_end cannot be smaller than page_start")
         if (self.time_start_seconds is None) != (self.time_end_seconds is None):
             raise ValueError("time_start_seconds and time_end_seconds must be set together")
-        if (
-            self.time_start_seconds is not None
-            and self.time_end_seconds is not None
-            and self.time_end_seconds < self.time_start_seconds
-        ):
+        if self.time_start_seconds is not None and self.time_end_seconds is not None and self.time_end_seconds < self.time_start_seconds:
             raise ValueError("time_end_seconds cannot be smaller than time_start_seconds")
         if self.lecture_date is None and self.lecture_date_ordinal is not None:
             raise ValueError("lecture_date_ordinal requires lecture_date")
