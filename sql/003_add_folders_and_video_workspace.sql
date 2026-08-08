@@ -36,6 +36,11 @@ DROP INDEX IF EXISTS idx_documents_specialty;
 ALTER TABLE documents DROP COLUMN IF EXISTS specialty;
 CREATE INDEX IF NOT EXISTS idx_documents_folder_id ON documents (folder_id);
 
+-- Qdrant payload/collection schema changed. Existing extracted content stays in PostgreSQL,
+-- but every legacy document must be reindexed into document_chunks_v2.
+UPDATE documents
+SET status = 'uploaded', chunk_count = 0, error_message = NULL;
+
 DROP TRIGGER IF EXISTS folders_set_updated_at ON folders;
 CREATE TRIGGER folders_set_updated_at BEFORE UPDATE ON folders
 FOR EACH ROW EXECUTE FUNCTION set_row_updated_at();
