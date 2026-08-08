@@ -16,10 +16,11 @@ def test_video_payload_serializes_timestamps() -> None:
         time_end_seconds=21.8,
         document_title="Лекция",
         source_type=SourceType.VIDEO,
+        folder_id=uuid4(),
+        folder_name="Кардиология",
         language="ru",
         content_hash=calculate_content_hash("фрагмент лекции"),
     )
-
     serialized = payload.to_qdrant_payload()
     assert serialized["time_start_seconds"] == 12.5
     assert serialized["time_end_seconds"] == 21.8
