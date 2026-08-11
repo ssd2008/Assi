@@ -1,5 +1,5 @@
 x-backend-image: &backend-image
-  image: mlproject-api:local
+  image: assi-api:local
 
 x-ml-environment: &ml-environment
   EMBEDDING_BACKEND: sentence-transformers
