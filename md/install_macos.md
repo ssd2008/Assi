@@ -72,8 +72,8 @@ Git не обязателен, если репозиторий скачивае�
 ## 4. Скачай и запусти проект
 
 ```bash
-git clone https://github.com/ssd2008/MLproject.git
-cd MLproject
+git clone https://github.com/ssd2008/Assi.git
+cd Assi
 docker compose up --build
 ```
 
