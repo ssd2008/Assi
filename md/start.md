@@ -46,15 +46,15 @@
 ### macOS — Terminal
 
 ```bash
-git clone https://github.com/ssd2008/MLproject.git
-cd MLproject
+git clone https://github.com/ssd2008/Assi.git
+cd Assi
 ```
 
 ### Windows — PowerShell
 
 ```powershell
-git clone https://github.com/ssd2008/MLproject.git
-Set-Location MLproject
+git clone https://github.com/ssd2008/Assi.git
+Set-Location Assi
 ```
 
 Если Git не установлен, скачай репозиторий через GitHub: **Code → Download ZIP**, распакуй архив и открой терминал в полученной папке.
