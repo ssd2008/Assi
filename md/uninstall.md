@@ -26,18 +26,20 @@ docker builder prune
 
 ## 3. Удали репозиторий
 
+Для нового клона стандартное имя папки — `Assi`. Если репозиторий был клонирован до переименования и локальная папка всё ещё называется `MLproject`, используй её фактическое имя вместо `Assi`.
+
 macOS/Linux:
 
 ```bash
 cd ..
-rm -rf MLproject
+rm -rf Assi
 ```
 
 Windows PowerShell:
 
 ```powershell
 Set-Location ..
-Remove-Item -Recurse -Force .\MLproject
+Remove-Item -Recurse -Force .\Assi
 ```
 
 После этого исходный код и Docker-ресурсы Асси будут удалены. Git, Docker Desktop и ресурсы других активных Docker-проектов останутся.

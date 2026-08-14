@@ -137,7 +137,7 @@ def _download(
             request = urllib.request.Request(
                 url,
                 headers={
-                    "User-Agent": "MLproject-evaluation/1.0",
+                    "User-Agent": "Assi-evaluation/1.0",
                     "Accept": accept,
                     "Accept-Encoding": "identity",
                     "Connection": "close",

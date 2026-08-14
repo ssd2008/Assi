@@ -90,8 +90,8 @@ Git не обязателен, если репозиторий скачивае�
 ## 5. Скачай и запусти проект
 
 ```powershell
-git clone https://github.com/ssd2008/MLproject.git
-Set-Location MLproject
+git clone https://github.com/ssd2008/Assi.git
+Set-Location Assi
 docker compose up --build
 ```
 

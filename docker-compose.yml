@@ -1,5 +1,5 @@
 x-backend-image: &backend-image
-  image: mlproject-api:local
+  image: assi-api:local
 
 x-ml-environment: &ml-environment
   EMBEDDING_BACKEND: sentence-transformers
@@ -127,8 +127,14 @@ services:
       api:
         condition: service_healthy
 
+# Keep the legacy MLproject volume names stable across repository/directory renames.
+# `name` is the physical Docker volume name and is not prefixed by the Compose project name.
 volumes:
   postgres_data:
+    name: mlproject_postgres_data
   qdrant_data:
+    name: mlproject_qdrant_data
   uploads_data:
+    name: mlproject_uploads_data
   huggingface_cache:
+    name: mlproject_huggingface_cache
