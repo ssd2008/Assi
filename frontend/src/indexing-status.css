@@ -1,0 +1,107 @@
+.global-indexing-status {
+  position: fixed;
+  right: 20px;
+  bottom: 92px;
+  z-index: 90;
+  width: min(390px, calc(100vw - 40px));
+  padding: 14px 15px;
+  border: 1px solid #bfd5c8;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 18px 48px rgba(28, 50, 39, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.global-indexing-status__heading {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.global-indexing-status__heading strong,
+.global-indexing-status__heading span {
+  display: block;
+}
+
+.global-indexing-status__heading strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.global-indexing-status__heading span {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-indexing-status__heading b {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.global-indexing-status__activity {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9ba49e;
+  box-shadow: 0 0 0 4px rgba(155, 164, 158, 0.14);
+}
+
+.global-indexing-status__activity.is-running {
+  background: #55b77d;
+  box-shadow: 0 0 0 4px rgba(85, 183, 125, 0.15);
+  animation: indexing-pulse 1.5s ease-in-out infinite;
+}
+
+.global-indexing-status__detail {
+  margin-top: 10px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-indexing-status__track {
+  height: 7px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e8eeea;
+}
+
+.global-indexing-status__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.global-indexing-status__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 8px;
+  color: #7a867e;
+  font-size: 8px;
+}
+
+@keyframes indexing-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.6; }
+}
+
+@media (max-width: 760px) {
+  .global-indexing-status {
+    right: 12px;
+    bottom: 78px;
+    width: calc(100vw - 24px);
+  }
+}
