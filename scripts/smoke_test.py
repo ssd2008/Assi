@@ -15,6 +15,12 @@ async def main(base_url: str) -> None:
             health.raise_for_status()
             print("health:", health.json())
 
+            active_video_jobs = await client.get("/jobs", params={"source_type": "video"})
+            active_video_jobs.raise_for_status()
+            if not isinstance(active_video_jobs.json(), list):
+                raise RuntimeError("Active video jobs endpoint did not return a list")
+            print("active video jobs:", active_video_jobs.json())
+
             folder_response = await client.post("/folders", json={"name": "Smoke test"})
             folder_response.raise_for_status()
             folder = folder_response.json()
