@@ -1,6 +1,6 @@
-# API-спецификация v0.3
+# API-спецификация v0.4
 
-API проекта Асси — Medical Learning Assistant.
+API проекта **Асси — Medical Learning Assistant**.
 
 ```text
 Base URL: http://127.0.0.1:8000/api/v1
@@ -8,273 +8,178 @@ Swagger UI: http://127.0.0.1:8000/docs
 OpenAPI JSON: http://127.0.0.1:8000/openapi.json
 ```
 
-Все JSON-запросы используют `Content-Type: application/json`. Сервис предназначен для работы с учебными материалами и не является диагностической или лечебной системой.
+## Основные сущности
 
-## Основной режим поиска
+### Папка
 
-По умолчанию API использует Dense retrieval:
+Каждый материал обязан принадлежать одной папке. Папка `Без папки` является системной: её нельзя переименовать или удалить. При удалении обычной папки её материалы автоматически перемещаются в `Без папки`.
 
-```text
-intfloat/multilingual-e5-large
-  -> normalized embeddings
-  -> Qdrant cosine search
-  -> ranked chunks
+```json
+{
+  "id": "uuid",
+  "name": "Кардиология",
+  "is_system": false,
+  "document_count": 4,
+  "created_at": "2026-08-08T12:00:00Z",
+  "updated_at": "2026-08-08T12:00:00Z"
+}
 ```
 
-Reranker является экспериментальной опцией и отключён глобально:
+### Материал
 
-```dotenv
-RERANKER_ENABLED=false
-```
-
-Для его фактического использования одновременно нужны:
-
-1. `RERANKER_ENABLED=true` в конфигурации сервера;
-2. `use_reranker=true` в запросе `/search` или `/answer`.
-
-Если глобальный флаг выключен, запрос обрабатывается через Dense retrieval, даже когда клиент передал `use_reranker=true`. В таком ответе `rerank_score=null`.
-
-Dense выбран по результатам воспроизводимого benchmark: `Recall@5=0.983`, `MRR=0.865`, `Top-1 gold accuracy=78.3%`, p50 latency `0.297` секунды. Подробности: [retrieval benchmark](../evaluation/README.md).
+`DocumentOut` содержит обязательный `folder_id`. Поле `specialty` удалено из API и схемы хранения.
 
 ## Краткая сводка API
 
 | Метод | Endpoint | Назначение |
 |---|---|---|
-| `GET` | `/health` | Проверка PostgreSQL, Qdrant и настроенных backend-ов |
-| `POST` | `/documents` | Создание документа из текста или URL |
-| `POST` | `/documents/upload` | Загрузка PDF-документа |
-| `POST` | `/documents/upload/video` | Загрузка видео для транскрибации |
-| `GET` | `/documents` | Получение списка документов |
-| `GET` | `/documents/{document_id}` | Получение одного документа |
-| `POST` | `/documents/{document_id}/index` | Индексация или переиндексация документа |
-| `DELETE` | `/documents/{document_id}` | Удаление документа и его векторов |
-| `GET` | `/jobs/{job_id}` | Получение состояния фоновой задачи |
-| `POST` | `/search` | Поиск релевантных фрагментов |
-| `POST` | `/answer` | Формирование ответа по найденным фрагментам |
-| `POST` | `/feedback` | Сохранение пользовательской оценки |
+| `GET` | `/health` | Проверка компонентов |
+| `GET` | `/folders` | Список папок с количеством материалов |
+| `POST` | `/folders` | Создать папку |
+| `PATCH` | `/folders/{folder_id}` | Переименовать папку |
+| `DELETE` | `/folders/{folder_id}` | Удалить папку; материалы перемещаются в `Без папки` |
+| `POST` | `/documents` | Создать материал из текста или URL |
+| `POST` | `/documents/upload` | Загрузить PDF |
+| `POST` | `/documents/upload/video` | Загрузить видео |
+| `GET` | `/documents` | Список материалов; поддерживает `folder_id` |
+| `GET` | `/documents/{document_id}` | Один материал |
+| `POST` | `/documents/{document_id}/index` | Индексировать / переиндексировать |
+| `DELETE` | `/documents/{document_id}` | Удалить материал и его векторы |
+| `GET` | `/videos/{document_id}` | Workspace видео: транскрипт, главы, хайлайты |
+| `GET` | `/videos/{document_id}/stream` | Поток исходного видео с HTTP Range |
+| `POST` | `/videos/{document_id}/ask` | Чат, ограниченный текущим видео |
+| `GET` | `/jobs/{job_id}` | Статус фоновой индексации |
+| `POST` | `/search` | Dense retrieval по материалам |
+| `POST` | `/answer` | Ответ по найденным фрагментам |
+| `POST` | `/feedback` | Пользовательская оценка ответа |
 
-## Общий формат ошибок
+## Folders
 
-```json
-{
-  "code": "document_not_found",
-  "detail": "Document not found",
-  "context": {
-    "document_id": "..."
-  }
-}
-```
+### `GET /folders`
 
-Ошибка валидации возвращает HTTP `422` с `code=validation_error`. Необработанная серверная ошибка возвращает HTTP `500` с `code=internal_error`.
+Возвращает все папки. В ответе у каждой папки есть `document_count`.
 
-## Enum-значения
-
-`source_type`:
-
-```text
-text
-url
-pdf
-video
-```
-
-Статус документа:
-
-```text
-uploaded
-processing
-ready
-failed
-```
-
-Статус задания:
-
-```text
-pending
-running
-completed
-failed
-```
-
-## Health
-
-### `GET /health`
-
-Выполняет реальные проверки PostgreSQL и Qdrant. ML-модели не загружаются и тестовый inference не выполняется.
-
-Стандартный ответ:
+### `POST /folders`
 
 ```json
 {
-  "status": "ok",
-  "service": "Асси — Medical Learning Assistant",
-  "version": "0.3.0",
-  "components": {
-    "postgres": {"status": "ok", "detail": null},
-    "qdrant": {"status": "ok", "detail": null},
-    "embedding": {
-      "status": "ok",
-      "detail": "configured:sentence-transformers"
-    },
-    "reranker": {
-      "status": "disabled",
-      "detail": null
-    },
-    "asr": {
-      "status": "ok",
-      "detail": "configured:faster-whisper:small"
-    },
-    "answer": {
-      "status": "ok",
-      "detail": "configured:extractive"
-    }
-  }
+  "name": "Кардиология"
 }
 ```
 
-При `RERANKER_ENABLED=true` компонент `reranker` имеет `status=ok` и detail вида `configured:cross-encoder`.
+Название: 1–120 символов. Названия уникальны без учёта регистра.
 
-HTTP `200` означает, что PostgreSQL и Qdrant доступны. При ошибке одного из них возвращается HTTP `503` и `status=degraded`.
+### `PATCH /folders/{folder_id}`
+
+```json
+{
+  "name": "Кардиология и сосудистые заболевания"
+}
+```
+
+При переименовании обновляется также `folder_name` в Qdrant payload уже проиндексированных chunks.
+
+### `DELETE /folders/{folder_id}`
+
+Удаляет обычную папку. Все связанные материалы получают `folder_id` системной папки `Без папки`. Qdrant payload обновляется тем же образом. Системную папку удалить нельзя.
 
 ## Documents
 
 ### `POST /documents`
 
-Создаёт документ из текста или URL. PDF и видео принимаются отдельными multipart endpoint-ами.
-
-Текстовый документ:
+Для `text` и `url` поле `folder_id` обязательно.
 
 ```json
 {
   "title": "Лекция по артериальной гипертензии",
   "source_type": "text",
   "raw_text": "Полный текст лекции...",
-  "specialty": "cardiology",
-  "lecture_date": "2026-07-14",
-  "language": "ru",
-  "metadata": {
-    "course": "internal-medicine"
-  }
-}
-```
-
-URL-документ:
-
-```json
-{
-  "title": "Материал курса",
-  "source_type": "url",
-  "source_url": "https://example.org/lecture",
-  "specialty": null,
-  "lecture_date": null,
+  "folder_id": "3be73d43-d98f-4afb-a54d-e1fb8220c512",
+  "lecture_date": "2026-08-08",
   "language": "ru",
   "metadata": {}
 }
 ```
 
-Ограничения:
-
-- `title`: 1–300 символов;
-- `raw_text`: обязателен для `source_type=text`;
-- `source_url`: обязателен для `source_type=url`;
-- `specialty`: до 100 символов;
-- `language`: 2–16 символов;
-- дополнительные JSON-поля запрещены.
-
-URL-загрузка разрешает только публичные HTTP(S)-адреса. Локальные и специальные IP-диапазоны, URL со встроенными credentials и небезопасные redirects блокируются.
-
-Успешный ответ — HTTP `201`, модель `DocumentOut`.
-
 ### `POST /documents/upload`
 
-Загружает PDF как `multipart/form-data`.
+`multipart/form-data`:
 
-| Поле | Тип | Обязательно | Описание |
-|---|---|---|---|
-| `file` | binary | да | PDF-файл |
-| `title` | string | да | 1–300 символов |
-| `specialty` | string | нет | До 100 символов |
-| `language` | string | нет | По умолчанию `ru` |
-| `lecture_date` | date | нет | ISO `YYYY-MM-DD` |
-| `metadata` | string | нет | JSON-объект, закодированный строкой |
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/documents/upload \
-  -F "file=@lecture.pdf" \
-  -F "title=Лекция по кардиологии" \
-  -F "specialty=cardiology" \
-  -F "language=ru"
-```
-
-Лимит по умолчанию — 10 МБ. PDF-скан без текстового слоя не поддерживается без внешнего OCR.
+| Поле | Обязательно |
+|---|---|
+| `file` | да |
+| `title` | да |
+| `folder_id` | да |
+| `language` | нет, default `ru` |
+| `lecture_date` | нет |
+| `metadata` | нет |
 
 ### `POST /documents/upload/video`
 
-Загружает видео как `multipart/form-data`. Поля совпадают с PDF upload.
-
-Поддерживаются `.mp4`, `.mov`, `.mkv`, `.webm` и `.m4v`. Лимит по умолчанию — 2 ГБ. Транскрибация выполняется локально через `faster-whisper`.
+Поля совпадают с PDF upload. Поддерживаются `.mp4`, `.mov`, `.mkv`, `.webm`, `.m4v`. Видео транскрибируется локально через `faster-whisper`.
 
 ### `GET /documents`
 
-Query parameters:
+Параметры: `limit`, `offset`, `status`, `source_type`, `folder_id`.
 
-| Параметр | Тип | Default | Ограничение |
-|---|---|---:|---|
-| `limit` | integer | `50` | 1–500 |
-| `offset` | integer | `0` | ≥ 0 |
-| `status` | enum | — | Статус документа |
-| `source_type` | enum | — | Тип источника |
-| `specialty` | string | — | До 100 символов |
+## Индексация видео
 
-Ответ содержит `items`, `total`, `limit` и `offset`.
+Pipeline V1:
 
-### `GET /documents/{document_id}`
+```text
+video file
+  -> faster-whisper + word timestamps
+  -> timed chunks
+  -> multilingual-e5-large embeddings
+  -> Qdrant
+  -> semantic chapter boundary detection
+  -> optional OpenAI-compatible title/highlight generation
+```
 
-Возвращает один `DocumentOut`. Полный исходный текст и локальный путь к файлу не возвращаются.
+Без генеративного backend главы строятся локально по semantic shift между соседними embedding-векторами. Хайлайты без генеративной модели не генерируются.
 
-### `DELETE /documents/{document_id}`
+## Video workspace
 
-Удаляет документ, связанный локальный файл и Qdrant points. Успешный ответ — HTTP `204` без body.
-
-## Indexing
-
-### `POST /documents/{document_id}/index`
-
-Создаёт фоновое задание индексации.
+### `GET /videos/{document_id}`
 
 ```json
 {
-  "chunk_size": 400,
-  "chunk_overlap": 80
+  "document": {"id": "...", "folder_id": "..."},
+  "transcript": [
+    {"index": 0, "start_seconds": 0.4, "end_seconds": 8.1, "text": "..."}
+  ],
+  "chapters": [
+    {"index": 0, "start_seconds": 0.4, "end_seconds": 340.0, "title": "Введение..."}
+  ],
+  "highlights": [],
+  "analysis_status": "local",
+  "generative_features_enabled": false
 }
 ```
 
-- `chunk_size`: 50–5000;
-- `chunk_overlap`: 0–2000 и меньше `chunk_size`;
-- оба поля необязательны.
+`analysis_status`: `pending`, `local`, `generated`, `failed`.
 
-Pipeline:
+### `GET /videos/{document_id}/stream`
 
-```text
-source extraction / transcription
-  -> chunks with overlap
-  -> dense embeddings
-  -> delete previous document points
-  -> Qdrant upsert
-  -> document status ready
+Возвращает исходный видеофайл. Поддерживается один HTTP `Range` диапазон, поэтому HTML5-плеер может перематывать видео без полной загрузки файла.
+
+### `POST /videos/{document_id}/ask`
+
+```json
+{
+  "message": "Какие противопоказания перечислены?",
+  "history": [
+    {"role": "user", "content": "О чем эта часть лекции?"},
+    {"role": "assistant", "content": "..."}
+  ]
+}
 ```
 
-Успешный ответ — HTTP `202` с `document_id`, `job_id` и `status=pending`.
+Retrieval всегда ограничен `document_id` текущего видео. Ответ содержит обычные `citations` с `time_start_seconds` / `time_end_seconds`.
 
-### `GET /jobs/{job_id}`
-
-Возвращает состояние задания, progress, result, error message и timestamps. Клиент должен опрашивать endpoint до статуса `completed` или `failed`.
+Если генеративный backend отключён, используется существующий extractive answer backend, а последние сообщения диалога добавляются к retrieval-query. Если генеративный backend включён, follow-up сначала преобразуется в самостоятельный поисковый запрос.
 
 ## Search
-
-### `POST /search`
-
-Стандартный dense-запрос:
 
 ```json
 {
@@ -282,149 +187,35 @@ source extraction / transcription
   "top_k": 10,
   "candidate_k": 30,
   "use_reranker": false,
-  "min_retrieval_score": null,
   "filters": {
+    "folder_ids": ["3be73d43-d98f-4afb-a54d-e1fb8220c512"],
     "document_ids": null,
-    "specialty": "cardiology",
-    "source_types": ["text", "pdf", "video"],
-    "language": "ru",
-    "lecture_date_from": null,
-    "lecture_date_to": null
+    "source_types": ["pdf", "video"],
+    "language": "ru"
   }
 }
 ```
 
-| Поле | Default | Ограничение |
-|---|---:|---|
-| `query` | — | 2–5000 символов |
-| `top_k` | `10` | 1–100 |
-| `candidate_k` | `30` | 1–300 и не меньше `top_k` |
-| `use_reranker` | `false` | boolean |
-| `min_retrieval_score` | `null` | `null` или `[-1, 1]` |
+Основной production-режим остаётся Dense retrieval. Reranker включается только при `RERANKER_ENABLED=true` и `use_reranker=true`.
 
-В основном режиме:
+## OpenAI-compatible backend
 
-```text
-final_score = clamp((retrieval_score + 1) / 2, 0, 1)
-rerank_score = null
-```
-
-`retrieval_score` — similarity score Qdrant. `final_score` — нормализованный ранжирующий показатель, а не калиброванная вероятность правильности.
-
-### Экспериментальный reranking
-
-Сначала включи серверную опцию:
+По умолчанию GPT/LLM-функции выключены:
 
 ```dotenv
-RERANKER_ENABLED=true
+ANSWER_BACKEND=extractive
 ```
 
-Затем передай:
+Для включения генеративных ответов, улучшенных названий глав, хайлайтов и contextualization multi-turn вопросов:
 
-```json
-{
-  "use_reranker": true
-}
+```dotenv
+ANSWER_BACKEND=openai
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_TIMEOUT_SECONDS=90
 ```
 
-В этом режиме:
+`OPENAI_BASE_URL` настраивается отдельно от ключа, поэтому вместо OpenAI можно указать совместимый gateway/API. Backend использует OpenAI-compatible `chat/completions`.
 
-```text
-normalized_retrieval_score = clamp((retrieval_score + 1) / 2, 0, 1)
-final_score = 0.25 * normalized_retrieval_score + 0.75 * rerank_score
-```
-
-Reranker не рекомендуется как production-default текущего MVP: в проведённом benchmark он ухудшил MRR и Top-1 gold accuracy и увеличил p50 latency до `5.525` секунды.
-
-Для видео результат может содержать объединённый контекст соседних чанков и диапазон `time_start_seconds` — `time_end_seconds`.
-
-## Answer
-
-### `POST /answer`
-
-Использует поля `/search` и дополнительные настройки:
-
-```json
-{
-  "query": "Кратко объясни лечение гипертензии",
-  "top_k": 10,
-  "candidate_k": 30,
-  "use_reranker": false,
-  "filters": {},
-  "max_context_chunks": 6,
-  "response_style": "detailed",
-  "include_citations": true
-}
-```
-
-- `max_context_chunks`: 1–30 и не больше `top_k`;
-- `response_style`: `brief`, `detailed` или `study_notes`;
-- `include_citations`: boolean.
-
-Ответ содержит:
-
-- `answer`;
-- `citations`;
-- `confidence`;
-- `limitations`;
-- `safety_notes`;
-- `used_chunks`;
-- `took_ms`.
-
-`confidence` — эвристический показатель, а не статистически откалиброванная вероятность. По умолчанию используется локальный extractive backend.
-
-## Feedback
-
-### `POST /feedback`
-
-```json
-{
-  "query": "Какие препараты применяют?",
-  "answer": "В материалах указаны...",
-  "rating": 1,
-  "comment": "Полезный ответ",
-  "document_ids": [
-    "88148a7c-1a7d-4cb6-8d9c-e7a23f0d50a2"
-  ],
-  "metadata": {
-    "client": "web"
-  }
-}
-```
-
-- `query`: 1–5000 символов;
-- `answer`: 1–50000 символов;
-- `rating`: только `1` или `-1`;
-- `comment`: до 5000 символов.
-
-Ответ — HTTP `201` с `id` и `created_at`.
-
-## Полный cURL-сценарий
-
-Создать текстовый документ:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/documents \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "Тестовая лекция",
-    "source_type": "text",
-    "raw_text": "Артериальная гипертензия — стойкое повышение артериального давления.",
-    "language": "ru",
-    "metadata": {}
-  }'
-```
-
-После получения `document_id` запусти индексацию:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/documents/DOCUMENT_ID/index" \
-  -H 'Content-Type: application/json' \
-  -d '{}'
-```
-
-Для ручного тестирования удобнее использовать Swagger UI:
-
-```text
-http://127.0.0.1:8000/docs
-```
+Видео, аудиофайл и кадры в LLM не отправляются: генеративному endpoint передаются только текстовые chunks/транскрипт и пользовательские сообщения.

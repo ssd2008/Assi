@@ -17,26 +17,14 @@ class AnswerGenerator(ABC):
     backend_name: str
 
     @abstractmethod
-    async def generate(
-        self,
-        *,
-        question: str,
-        chunks: Sequence[SearchResult],
-        style: str,
-    ) -> str:
+    async def generate(self, *, question: str, chunks: Sequence[SearchResult], style: str) -> str:
         raise NotImplementedError
 
 
 class ExtractiveAnswerGenerator(AnswerGenerator):
     backend_name = "extractive"
 
-    async def generate(
-        self,
-        *,
-        question: str,
-        chunks: Sequence[SearchResult],
-        style: str,
-    ) -> str:
+    async def generate(self, *, question: str, chunks: Sequence[SearchResult], style: str) -> str:
         del question
         if not chunks:
             return "В загруженных материалах недостаточно информации для ответа."
@@ -47,11 +35,7 @@ class ExtractiveAnswerGenerator(AnswerGenerator):
             if len(text) > max_chars:
                 text = text[:max_chars].rsplit(" ", 1)[0] + "…"
             excerpts.append(f"[{index}] {text}")
-        intro = (
-            "Ниже приведены наиболее релевантные фрагменты учебных материалов:"
-            if style != "study_notes"
-            else "Конспект по найденным материалам:"
-        )
+        intro = "Ниже приведены наиболее релевантные фрагменты учебных материалов:" if style != "study_notes" else "Конспект по найденным материалам:"
         return intro + "\n\n" + "\n\n".join(excerpts)
 
 
@@ -63,23 +47,22 @@ class OpenAIAnswerGenerator(AnswerGenerator):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise RuntimeError("The openai package is not installed") from exc
-        self._client = AsyncOpenAI(api_key=settings.get_openai_api_key())
+        self._client = AsyncOpenAI(
+            api_key=settings.get_openai_api_key(),
+            base_url=settings.openai_base_url,
+            timeout=settings.openai_timeout_seconds,
+        )
         self._model = settings.openai_model
 
-    async def generate(
-        self,
-        *,
-        question: str,
-        chunks: Sequence[SearchResult],
-        style: str,
-    ) -> str:
+    async def generate(self, *, question: str, chunks: Sequence[SearchResult], style: str) -> str:
         context = "\n\n".join(
-            f"SOURCE [{index}] ({chunk.document_title}):\n{chunk.text}"
+            f"SOURCE [{index}] ({chunk.document_title}; {chunk.time_start_seconds or '-'}–{chunk.time_end_seconds or '-'}):\n{chunk.text}"
             for index, chunk in enumerate(chunks, start=1)
         )
-        response = await self._client.responses.create(
+        response = await self._client.chat.completions.create(
             model=self._model,
-            input=[
+            temperature=0.2,
+            messages=[
                 {
                     "role": "system",
                     "content": (
@@ -88,27 +71,17 @@ class OpenAIAnswerGenerator(AnswerGenerator):
                         "маркерами [1], [2]. Если данных недостаточно, скажи об этом прямо."
                     ),
                 },
-                {
-                    "role": "user",
-                    "content": f"Стиль ответа: {style}\n\nВопрос: {question}\n\n{context}",
-                },
+                {"role": "user", "content": f"Стиль ответа: {style}\n\nВопрос: {question}\n\n{context}"},
             ],
         )
-        answer = response.output_text.strip()
+        answer = (response.choices[0].message.content or "").strip()
         if not answer:
-            raise RuntimeError("OpenAI returned an empty answer")
+            raise RuntimeError("OpenAI-compatible endpoint returned an empty answer")
         return answer
 
 
 class AnswerService:
-    def __init__(
-        self,
-        *,
-        settings: Settings,
-        search_service: SearchService,
-        generator: AnswerGenerator,
-        fallback_generator: ExtractiveAnswerGenerator,
-    ) -> None:
+    def __init__(self, *, settings: Settings, search_service: SearchService, generator: AnswerGenerator, fallback_generator: ExtractiveAnswerGenerator) -> None:
         self._settings = settings
         self._search = search_service
         self._generator = generator
@@ -121,59 +94,35 @@ class AnswerService:
     async def answer(self, request: AnswerRequest) -> AnswerOut:
         started = time.perf_counter()
         search_response = await self._search.search(request)
-        chunks = search_response.results[: request.max_context_chunks]
+        chunks = search_response.results[:request.max_context_chunks]
         limitations: list[str] = []
         if not chunks:
             answer = "В загруженных материалах недостаточно информации для ответа."
             limitations.append("По запросу не найдено релевантных фрагментов.")
         else:
             try:
-                answer = await self._generator.generate(
-                    question=request.query,
-                    chunks=chunks,
-                    style=request.response_style,
-                )
+                answer = await self._generator.generate(question=request.query, chunks=chunks, style=request.response_style)
             except Exception:
                 logger.exception("Primary answer generator failed; using extractive fallback")
-                answer = await self._fallback.generate(
-                    question=request.query,
-                    chunks=chunks,
-                    style=request.response_style,
-                )
+                answer = await self._fallback.generate(question=request.query, chunks=chunks, style=request.response_style)
                 limitations.append("Генеративная модель была недоступна; возвращён extractive-ответ.")
-
         if self._generator.backend_name == "extractive":
-            limitations.append(
-                "Ответ собран из найденных фрагментов без генеративной переформулировки."
+            limitations.append("Ответ собран из найденных фрагментов без генеративной переформулировки.")
+        citations = [
+            Citation(
+                number=index, document_id=chunk.document_id, chunk_id=chunk.chunk_id,
+                document_title=chunk.document_title, quote=chunk.text[:1000],
+                page_start=chunk.page_start, page_end=chunk.page_end,
+                time_start_seconds=chunk.time_start_seconds, time_end_seconds=chunk.time_end_seconds,
+                section_title=chunk.section_title, char_start=chunk.char_start, char_end=chunk.char_end,
+                retrieval_score=chunk.retrieval_score, rerank_score=chunk.rerank_score,
             )
-        citations = (
-            [
-                Citation(
-                    number=index,
-                    document_id=chunk.document_id,
-                    chunk_id=chunk.chunk_id,
-                    document_title=chunk.document_title,
-                    quote=chunk.text[:1000],
-                    page_start=chunk.page_start,
-                    page_end=chunk.page_end,
-                    time_start_seconds=chunk.time_start_seconds,
-                    time_end_seconds=chunk.time_end_seconds,
-                    section_title=chunk.section_title,
-                    char_start=chunk.char_start,
-                    char_end=chunk.char_end,
-                    retrieval_score=chunk.retrieval_score,
-                    rerank_score=chunk.rerank_score,
-                )
-                for index, chunk in enumerate(chunks, start=1)
-            ]
-            if request.include_citations
-            else []
-        )
-        confidence = self._confidence(chunks)
+            for index, chunk in enumerate(chunks, start=1)
+        ] if request.include_citations else []
         return AnswerOut(
             answer=answer,
             citations=citations,
-            confidence=confidence,
+            confidence=self._confidence(chunks),
             limitations=limitations,
             safety_notes=[
                 "Ответ предназначен для обучения и не заменяет клиническое решение врача.",

@@ -10,6 +10,7 @@ from app.services.answer_service import AnswerService, ExtractiveAnswerGenerator
 
 class FakeSearchService:
     async def search(self, request):
+        folder_id = uuid4()
         return SearchResponse(
             query=request.query,
             total_candidates=1,
@@ -23,7 +24,8 @@ class FakeSearchService:
                     chunk_index=0,
                     text="Ингибиторы АПФ применяются при артериальной гипертензии.",
                     source_type=SourceType.TEXT,
-                    specialty="cardiology",
+                    folder_id=folder_id,
+                    folder_name="Кардиология",
                     lecture_date=date(2026, 1, 1),
                     language="ru",
                     char_start=0,

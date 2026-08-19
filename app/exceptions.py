@@ -20,17 +20,35 @@ class NotFoundError(AppError):
     code = "not_found"
 
 
+class ConflictError(AppError):
+    status_code = 409
+    code = "conflict"
+
+
 class DocumentNotFoundError(NotFoundError):
     code = "document_not_found"
+
+
+class FolderNotFoundError(NotFoundError):
+    code = "folder_not_found"
 
 
 class JobNotFoundError(NotFoundError):
     code = "job_not_found"
 
 
+class FolderConflictError(ConflictError):
+    code = "folder_conflict"
+
+
 class InvalidDocumentError(AppError):
     status_code = 422
     code = "invalid_document"
+
+
+class InvalidRangeError(AppError):
+    status_code = 416
+    code = "invalid_range"
 
 
 class UnsupportedMediaTypeError(AppError):

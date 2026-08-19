@@ -39,12 +39,29 @@ class JobStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class FolderCreate(APIModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class FolderUpdate(APIModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class FolderOut(APIModel):
+    id: UUID
+    name: str
+    is_system: bool = False
+    document_count: int = Field(default=0, ge=0)
+    created_at: datetime
+    updated_at: datetime
+
+
 class DocumentCreate(APIModel):
     title: str = Field(min_length=1, max_length=300)
     source_type: SourceType
+    folder_id: UUID
     source_url: AnyHttpUrl | None = None
     raw_text: str | None = Field(default=None, min_length=1)
-    specialty: str | None = Field(default=None, max_length=100)
     lecture_date: date | None = None
     language: str = Field(default="ru", min_length=2, max_length=16)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -52,9 +69,7 @@ class DocumentCreate(APIModel):
     @model_validator(mode="after")
     def validate_source_payload(self) -> "DocumentCreate":
         if self.source_type in {SourceType.PDF, SourceType.VIDEO}:
-            raise ValueError(
-                "PDF and video files must be uploaded through their upload endpoints"
-            )
+            raise ValueError("PDF and video files must be uploaded through their upload endpoints")
         if self.source_type == SourceType.URL and self.source_url is None:
             raise ValueError("source_url is required for source_type='url'")
         if self.source_type == SourceType.TEXT and not self.raw_text:
@@ -71,11 +86,11 @@ class DocumentOut(APIModel):
     title: str
     source_type: SourceType
     status: DocumentStatus
+    folder_id: UUID
     source_url: str | None = None
     original_filename: str | None = None
     mime_type: str | None = None
     size_bytes: int | None = Field(default=None, ge=0)
-    specialty: str | None = None
     lecture_date: date | None = None
     language: str
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -98,11 +113,7 @@ class IndexDocumentRequest(APIModel):
 
     @model_validator(mode="after")
     def validate_overlap(self) -> "IndexDocumentRequest":
-        if (
-            self.chunk_size is not None
-            and self.chunk_overlap is not None
-            and self.chunk_overlap >= self.chunk_size
-        ):
+        if self.chunk_size is not None and self.chunk_overlap is not None and self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk_overlap must be smaller than chunk_size")
         return self
 
@@ -130,7 +141,7 @@ class JobOut(APIModel):
 
 class SearchFilters(APIModel):
     document_ids: list[UUID] | None = None
-    specialty: str | None = Field(default=None, max_length=100)
+    folder_ids: list[UUID] | None = None
     source_types: list[SourceType] | None = None
     language: str | None = Field(default=None, min_length=2, max_length=16)
     lecture_date_from: date | None = None
@@ -138,11 +149,7 @@ class SearchFilters(APIModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "SearchFilters":
-        if (
-            self.lecture_date_from is not None
-            and self.lecture_date_to is not None
-            and self.lecture_date_from > self.lecture_date_to
-        ):
+        if self.lecture_date_from is not None and self.lecture_date_to is not None and self.lecture_date_from > self.lecture_date_to:
             raise ValueError("lecture_date_from cannot be later than lecture_date_to")
         return self
 
@@ -167,11 +174,12 @@ class SearchResult(APIModel):
     chunk_id: UUID
     document_id: UUID
     document_title: str
+    folder_id: UUID
+    folder_name: str
     chunk_index: int = Field(ge=0)
     text: str
     source_type: SourceType
     source_url: str | None = None
-    specialty: str | None = None
     lecture_date: date | None = None
     language: str
     page_start: int | None = Field(default=None, ge=1)
@@ -230,6 +238,48 @@ class AnswerOut(APIModel):
     safety_notes: list[str] = Field(default_factory=list)
     used_chunks: int = Field(ge=0)
     took_ms: float = Field(ge=0)
+
+
+class TranscriptSegment(APIModel):
+    index: int = Field(ge=0)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    text: str = Field(min_length=1)
+
+
+class VideoChapter(APIModel):
+    index: int = Field(ge=0)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    title: str = Field(min_length=1, max_length=200)
+
+
+class VideoHighlight(APIModel):
+    index: int = Field(ge=0)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    title: str = Field(min_length=1, max_length=200)
+    reason: str = Field(default="", max_length=1000)
+    importance: int = Field(default=3, ge=1, le=5)
+
+
+class VideoWorkspaceOut(APIModel):
+    document: DocumentOut
+    transcript: list[TranscriptSegment]
+    chapters: list[VideoChapter]
+    highlights: list[VideoHighlight]
+    analysis_status: Literal["pending", "local", "generated", "failed"] = "pending"
+    generative_features_enabled: bool = False
+
+
+class ChatMessage(APIModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=20000)
+
+
+class VideoAskRequest(APIModel):
+    message: str = Field(min_length=2, max_length=5000)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=30)
 
 
 class FeedbackRequest(APIModel):

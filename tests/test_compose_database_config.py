@@ -7,8 +7,12 @@ import yaml
 COMPOSE_FILE = Path(__file__).resolve().parents[1] / "docker-compose.yml"
 
 
+def _load_compose() -> dict:
+    return yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
+
+
 def test_compose_postgres_credentials_are_consistent() -> None:
-    compose = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
+    compose = _load_compose()
     services = compose["services"]
 
     postgres_environment = services["postgres"]["environment"]
@@ -29,3 +33,14 @@ def test_compose_postgres_credentials_are_consistent() -> None:
         assert parsed.hostname == "postgres"
         assert parsed.port == 5432
         assert parsed.path == f"/{expected_database}"
+
+
+def test_compose_keeps_legacy_volume_names_stable() -> None:
+    compose = _load_compose()
+
+    assert compose["volumes"] == {
+        "postgres_data": {"name": "mlproject_postgres_data"},
+        "qdrant_data": {"name": "mlproject_qdrant_data"},
+        "uploads_data": {"name": "mlproject_uploads_data"},
+        "huggingface_cache": {"name": "mlproject_huggingface_cache"},
+    }
