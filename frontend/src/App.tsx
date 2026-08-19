@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
-import type { DocumentItem, FolderItem, HealthResponse } from "./api/types";
+import type { DocumentItem, FolderItem, HealthResponse, JobItem } from "./api/types";
 import { HealthIndicator } from "./components/HealthIndicator";
 import { ErrorBanner } from "./components/ui";
 import { AssistantPage } from "./pages/AssistantPage";
@@ -34,6 +34,7 @@ export default function App() {
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [activeVideoJobs, setActiveVideoJobs] = useState<JobItem[]>([]);
   const [toasts, setToasts] = useState<ToastState[]>([]);
 
   const notify = useCallback((message: string, tone: "success" | "error" = "success") => {
@@ -61,14 +62,28 @@ export default function App() {
     try { setHealth(await api.getHealth()); } catch { setHealth(null); } finally { setHealthLoading(false); }
   }, []);
 
+  const refreshActiveVideoJobs = useCallback(async () => {
+    try {
+      setActiveVideoJobs(await api.listActiveJobs("video"));
+    } catch {
+      setActiveVideoJobs([]);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshWorkspace();
     void refreshHealth();
-    const interval = window.setInterval(() => void refreshHealth(), 30000);
+    void refreshActiveVideoJobs();
+    const healthInterval = window.setInterval(() => void refreshHealth(), 30000);
+    const indexingInterval = window.setInterval(() => void refreshActiveVideoJobs(), 2000);
     const onPopState = () => setRoute(parseRoute());
     window.addEventListener("popstate", onPopState);
-    return () => { window.clearInterval(interval); window.removeEventListener("popstate", onPopState); };
-  }, [refreshHealth, refreshWorkspace]);
+    return () => {
+      window.clearInterval(healthInterval);
+      window.clearInterval(indexingInterval);
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [refreshActiveVideoJobs, refreshHealth, refreshWorkspace]);
 
   function navigate(path: string) {
     window.history.pushState({}, "", path);
@@ -106,6 +121,18 @@ export default function App() {
   }
 
   const activeFolder = useMemo(() => (route.page === "folder" || route.page === "video") ? folders.find((folder) => folder.id === route.folderId) || null : null, [folders, route]);
+  const primaryVideoJob = useMemo(
+    () => activeVideoJobs.find((job) => job.status === "running") || activeVideoJobs[0] || null,
+    [activeVideoJobs],
+  );
+  const primaryVideoDocument = useMemo(
+    () => primaryVideoJob ? documents.find((document) => document.id === primaryVideoJob.document_id) || null : null,
+    [documents, primaryVideoJob],
+  );
+  const queuedVideoCount = useMemo(() => {
+    const pending = activeVideoJobs.filter((job) => job.status === "pending").length;
+    return Math.max(0, pending - (primaryVideoJob?.status === "pending" ? 1 : 0));
+  }, [activeVideoJobs, primaryVideoJob]);
 
   return (
     <div className="app-shell">
@@ -143,6 +170,22 @@ export default function App() {
           {route.page === "system" && <SystemPage health={health} loading={healthLoading} refresh={refreshHealth} />}
         </div>
       </main>
+      {primaryVideoJob && <aside className="global-indexing-status" aria-live="polite" aria-label="Статус индексации видео">
+        <div className="global-indexing-status__heading">
+          <span className={`global-indexing-status__activity${primaryVideoJob.status === "running" ? " is-running" : ""}`} aria-hidden="true" />
+          <div>
+            <strong>{primaryVideoJob.status === "running" ? "Видео индексируется" : "Видео ждёт индексации"}</strong>
+            <span>{primaryVideoDocument?.title || "Видео"}</span>
+          </div>
+          <b>{primaryVideoJob.progress}%</b>
+        </div>
+        <div className="global-indexing-status__detail">{String(primaryVideoJob.result.stage_detail || (primaryVideoJob.status === "running" ? "Индексация" : "Ожидание запуска"))}</div>
+        <div className="global-indexing-status__track"><span style={{ width: `${primaryVideoJob.progress}%` }} /></div>
+        <div className="global-indexing-status__footer">
+          <span>{primaryVideoJob.status === "running" ? "CPU/RAM используются для ML-обработки" : "CPU/RAM почти не используются этой задачей"}</span>
+          {queuedVideoCount > 0 && <span>Ещё в очереди: {queuedVideoCount}</span>}
+        </div>
+      </aside>}
       <div className="toast-region" aria-live="polite">{toasts.map((toast) => <div className={`toast toast--${toast.tone}`} key={toast.id}><span>{toast.tone === "success" ? "✓" : "!"}</span><p>{toast.message}</p><button type="button" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}>×</button></div>)}</div>
     </div>
   );
