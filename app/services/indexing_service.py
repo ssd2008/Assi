@@ -48,6 +48,29 @@ class IndexingService:
         self._transcription = transcription
         self._video_analysis = video_analysis
         self._cancellation = cancellation or IndexingCancellationRegistry()
+        self._run_lock = asyncio.Lock()
+
+    async def recover_interrupted_jobs(self) -> int:
+        interrupted_running = set(await self._jobs.cancel_interrupted())
+        processing_documents = await self._documents.list_documents(
+            limit=10000,
+            offset=0,
+            status=DocumentStatus.PROCESSING,
+        )
+        affected_document_ids = interrupted_running | {
+            document.id for document in processing_documents
+        }
+        for document_id in affected_document_ids:
+            await self._vectors.delete_document(document_id)
+            document = await self._documents.get_internal(document_id)
+            if document is not None and document.status == DocumentStatus.PROCESSING:
+                await self._documents.update_status(document_id, DocumentStatus.UPLOADED)
+        if affected_document_ids:
+            logger.warning(
+                "Recovered %s interrupted indexing document(s) after restart",
+                len(affected_document_ids),
+            )
+        return len(affected_document_ids)
 
     async def create_job(self, document_id: UUID, *, chunk_size: int | None, chunk_overlap: int | None):
         document = await self._documents.get_internal(document_id)
@@ -65,6 +88,10 @@ class IndexingService:
         await self._cancellation.cancel_document(document_id)
 
     async def run_job(self, job_id: UUID, document_id: UUID) -> None:
+        async with self._run_lock:
+            await self._run_job_serialized(job_id, document_id)
+
+    async def _run_job_serialized(self, job_id: UUID, document_id: UUID) -> None:
         cancel_event = self._cancellation.get_cancel_event(job_id, document_id)
         try:
             self._raise_if_cancelled(cancel_event)

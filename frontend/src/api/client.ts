@@ -65,6 +65,7 @@ export const api = {
   uploadVideo: (formData: FormData) => request<DocumentItem>("/documents/upload/video", { method: "POST", body: formData }),
   deleteDocument: (documentId: string) => request<void>(`/documents/${documentId}`, { method: "DELETE" }),
   indexDocument: (documentId: string, options: { chunk_size?: number; chunk_overlap?: number } = {}) => request<IndexDocumentResponse>(`/documents/${documentId}/index`, { method: "POST", body: JSON.stringify(options) }),
+  listActiveJobs: (sourceType?: SourceType) => request<JobItem[]>(`/jobs${sourceType ? `?source_type=${encodeURIComponent(sourceType)}` : ""}`),
   getJob: (jobId: string) => request<JobItem>(`/jobs/${jobId}`),
   search: (payload: SearchRequest) => request<SearchResponse>("/search", { method: "POST", body: JSON.stringify(payload) }),
   answer: (payload: AnswerRequest) => request<AnswerResponse>("/answer", { method: "POST", body: JSON.stringify(payload) }),

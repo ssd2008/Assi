@@ -31,14 +31,15 @@ class TranscriptionService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._model: Any | None = None
-        self._lock = asyncio.Lock()
+        self._model_lock = asyncio.Lock()
+        self._transcription_lock = asyncio.Lock()
 
     async def _get_model(self):
         if self._settings.asr_backend == "disabled":
             raise RuntimeError("Video transcription is disabled")
         if self._model is not None:
             return self._model
-        async with self._lock:
+        async with self._model_lock:
             if self._model is None:
                 try:
                     from faster_whisper import WhisperModel
@@ -52,6 +53,8 @@ class TranscriptionService:
                     self._settings.asr_model_name,
                     device=device,
                     compute_type=self._settings.asr_compute_type,
+                    cpu_threads=self._settings.asr_cpu_threads,
+                    num_workers=self._settings.asr_num_workers,
                 )
         return self._model
 
@@ -63,15 +66,17 @@ class TranscriptionService:
         on_progress: TranscriptionProgressCallback | None = None,
         should_cancel: CancellationCheck | None = None,
     ) -> TranscriptionResult:
-        model = await self._get_model()
-        return await asyncio.to_thread(
-            self._transcribe_sync,
-            model,
-            path,
-            language,
-            on_progress,
-            should_cancel,
-        )
+        async with self._transcription_lock:
+            self._raise_if_cancelled(should_cancel)
+            model = await self._get_model()
+            return await asyncio.to_thread(
+                self._transcribe_sync,
+                model,
+                path,
+                language,
+                on_progress,
+                should_cancel,
+            )
 
     def _transcribe_sync(
         self,

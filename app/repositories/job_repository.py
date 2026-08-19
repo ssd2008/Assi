@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import asyncpg
 
-from app.schemas import JobOut, JobStatus
+from app.schemas import JobOut, JobStatus, SourceType
 
 _JOB_COLUMNS = """
     id, document_id, status, progress, chunk_size, chunk_overlap,
@@ -47,6 +47,50 @@ class JobRepository:
             job_id,
         )
         return self._to_job(record) if record else None
+
+    async def list_active(self, *, source_type: SourceType | None = None) -> list[JobOut]:
+        statuses = [JobStatus.RUNNING.value, JobStatus.PENDING.value]
+        conditions = ["status = ANY($1::text[])"]
+        args: list[object] = [statuses]
+        if source_type is not None:
+            args.append(source_type.value)
+            conditions.append(
+                f"EXISTS (SELECT 1 FROM documents d WHERE d.id = index_jobs.document_id "
+                f"AND d.source_type = ${len(args)})"
+            )
+        records = await self._pool.fetch(
+            f"""
+            SELECT {_JOB_COLUMNS}
+            FROM index_jobs
+            WHERE {' AND '.join(conditions)}
+            ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, created_at ASC
+            """,
+            *args,
+        )
+        return [self._to_job(record) for record in records]
+
+    async def cancel_interrupted(self) -> list[UUID]:
+        running_records = await self._pool.fetch(
+            "SELECT DISTINCT document_id FROM index_jobs WHERE status = $1",
+            JobStatus.RUNNING.value,
+        )
+        await self._pool.execute(
+            """
+            UPDATE index_jobs
+            SET status = $2,
+                result = result || $3::jsonb,
+                error_message = NULL,
+                finished_at = NOW()
+            WHERE status = ANY($1::text[])
+            """,
+            [JobStatus.PENDING.value, JobStatus.RUNNING.value],
+            JobStatus.CANCELLED.value,
+            {
+                "stage": "cancelled",
+                "stage_detail": "Индексация прервана перезапуском приложения",
+            },
+        )
+        return [record["document_id"] for record in running_records]
 
     async def mark_running(self, job_id: UUID, *, progress: int = 1) -> None:
         await self._pool.execute(

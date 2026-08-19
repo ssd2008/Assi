@@ -99,6 +99,7 @@ async def create_container(settings: Settings) -> AppContainer:
             video_analysis=video_analysis,
             cancellation=cancellation,
         )
+        await indexing_service.recover_interrupted_jobs()
         search_service = SearchService(
             vectors=vectors,
             embeddings=embeddings,
