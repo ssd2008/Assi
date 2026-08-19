@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     asr_compute_type: Literal["int8", "float16", "float32", "int8_float16"] = "int8"
     asr_beam_size: int = Field(default=5, ge=1, le=20)
     asr_vad_filter: bool = True
+    asr_cpu_threads: int = Field(default=2, ge=1, le=64)
+    asr_num_workers: int = Field(default=1, ge=1, le=8)
 
     chunk_size_tokens: int = Field(default=400, ge=50, le=5000)
     chunk_overlap_tokens: int = Field(default=80, ge=0, le=2000)
